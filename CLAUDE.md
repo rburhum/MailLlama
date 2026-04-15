@@ -34,7 +34,7 @@ uv run alembic upgrade head
 uv run ruff check .
 ```
 
-CI (`.github/workflows/tests.yml`) runs `uv sync --frozen --extra dev` on 3.11 / 3.12 / 3.13 — `--frozen` means **any change to `pyproject.toml` requires regenerating `uv.lock` and committing it** or CI will fail.
+CI (`.github/workflows/tests.yml`) runs `uv sync --frozen --extra dev --python 3.13 && uv run pytest -q`. `--frozen` means **any change to `pyproject.toml` requires regenerating `uv.lock` and committing it** or CI will fail.
 
 ## Architecture
 
