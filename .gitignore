@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+.env.local
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Tooling
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+dist/
+build/
+
+# Editors
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# MailLlama runtime
+mailllama.db
+instance/
+tokens/

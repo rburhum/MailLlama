@@ -1,0 +1,7 @@
+<tr id="task-{{ task.id }}"
+    {% if task.status in ('pending', 'running') %}
+      hx-get="/tasks/{{ task.id }}" hx-trigger="every 2s" hx-target="this" hx-swap="outerHTML"
+    {% endif %}
+    class="border-t">
+  {% with t = task %}{% include '_task_row.html' %}{% endwith %}
+</tr>

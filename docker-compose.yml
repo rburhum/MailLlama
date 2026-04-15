@@ -1,0 +1,21 @@
+# Optional compose file for users who want Postgres/Redis locally.
+# Default MailLlama install uses SQLite + in-process tasks and needs none of this.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: mailllama
+      POSTGRES_PASSWORD: mailllama
+      POSTGRES_DB: mailllama
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    profiles: ["postgres"]
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    profiles: ["redis"]
+
+volumes:
+  pgdata:

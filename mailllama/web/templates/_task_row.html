@@ -1,0 +1,13 @@
+<td class="p-2">{{ t.id }}</td>
+<td class="p-2">{{ t.kind }}</td>
+<td class="p-2">
+  {% if t.status == 'running' %}<span class="text-blue-700">running</span>
+  {% elif t.status == 'completed' %}<span class="text-green-700">completed</span>
+  {% elif t.status == 'failed' %}<span class="text-red-700">failed</span>
+  {% else %}{{ t.status }}{% endif %}
+</td>
+<td class="p-2">
+  {% if t.total %}{{ t.progress }}/{{ t.total }}{% else %}{{ t.progress }}{% endif %}
+</td>
+<td class="p-2 text-xs text-gray-600">{{ t.message or '' }}</td>
+<td class="p-2 text-xs text-red-600">{% if t.error %}{{ t.error[:200] }}{% endif %}</td>
