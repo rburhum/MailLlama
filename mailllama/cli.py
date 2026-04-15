@@ -21,7 +21,12 @@ GITIGNORE_PATH = PROJECT_ROOT / ".gitignore"
 
 @app.command()
 def init() -> None:
-    """Create the database and apply migrations."""
+    """Apply database migrations.
+
+    `mailllama setup` already runs this for you. Use `init` directly when
+    you only want to apply migrations (e.g. after pulling new code that
+    added a migration) without touching .env.
+    """
     result = subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"])
     raise typer.Exit(result.returncode)
 
@@ -116,24 +121,30 @@ def setup(
     env_file: Path = typer.Option(
         ENV_PATH, "--env-file", "-f", help="Path to the .env file to write."
     ),
-    force: bool = typer.Option(False, "--force", help="Overwrite without prompting."),
+    skip_migrations: bool = typer.Option(
+        False, "--skip-migrations", help="Do not apply database migrations at the end."
+    ),
 ) -> None:
-    """Interactively create (or rewrite) the .env config file.
+    """Interactively configure MailLlama and set up the database.
 
-    Stores secrets locally in a .env file which is added to .gitignore
-    automatically. Generates a Fernet SECRET_KEY for you.
+    Safe to re-run: existing values in .env are loaded as defaults (press
+    Enter to keep each one), and Alembic migrations are idempotent. Secrets
+    already present — like SECRET_KEY — are preserved; this command will
+    never rotate them for you (that would invalidate stored OAuth tokens).
     """
     from cryptography.fernet import Fernet
 
     env_file = env_file.expanduser().resolve()
     existing = _read_env(env_file) if env_file.exists() else {}
 
-    if existing and not force:
-        if not typer.confirm(f"{env_file} exists. Keep existing values as defaults?", default=True):
-            existing = {}
-
     typer.secho("\nMailLlama setup\n", fg=typer.colors.CYAN, bold=True)
-    typer.echo("Press Enter to accept the default in [brackets]. Secrets are hidden.\n")
+    if existing:
+        typer.echo(
+            f"Loaded existing config from {env_file}.\n"
+            "Press Enter to keep each value. Secrets are hidden.\n"
+        )
+    else:
+        typer.echo("Press Enter to accept the default in [brackets]. Secrets are hidden.\n")
 
     answers: dict[str, str] = {}
 
@@ -271,9 +282,11 @@ def setup(
     # ----- Security -----
     typer.secho("\nSecurity", fg=typer.colors.BRIGHT_BLUE, bold=True)
     secret = existing.get("SECRET_KEY", "").strip()
-    if not secret or typer.confirm("Generate a new SECRET_KEY (invalidates stored tokens)?", default=not secret):
+    if not secret:
         secret = Fernet.generate_key().decode()
-        typer.echo("Generated a new SECRET_KEY.")
+        typer.echo("Generated a new SECRET_KEY (saved to .env).")
+    else:
+        typer.echo("Keeping existing SECRET_KEY (required to decrypt stored OAuth tokens).")
     answers["SECRET_KEY"] = secret
 
     answers["WEB_AUTH_TOKEN"] = typer.prompt(
@@ -297,25 +310,52 @@ def setup(
     answers["DRY_RUN"] = "true" if dry else "false"
 
     # ----- Write file -----
-    if env_file.exists() and not force:
-        if not typer.confirm(f"\nWrite config to {env_file}?", default=True):
-            typer.echo("Aborted; nothing written.")
-            raise typer.Exit(1)
-
     _write_env(env_file, answers)
     typer.secho(f"\nWrote {env_file}", fg=typer.colors.GREEN)
 
     # ----- .gitignore hygiene -----
     _ensure_gitignore(env_file)
 
-    typer.secho("\nNext steps:", fg=typer.colors.CYAN, bold=True)
-    typer.echo("  mailllama init        # create the database")
+    # ----- Database -----
+    if skip_migrations:
+        typer.echo("\nSkipping database migrations (--skip-migrations).")
+    else:
+        _apply_migrations(answers["DATABASE_URL"])
+
+    typer.secho("\nSetup complete.", fg=typer.colors.GREEN, bold=True)
+    typer.secho("Next steps:", fg=typer.colors.CYAN, bold=True)
     if answers["MAIL_PROVIDER"] == "gmail_api":
         typer.echo("  mailllama serve       # then visit /auth/gmail/start to connect")
     else:
         typer.echo("  mailllama sync        # pulls mail via IMAP")
     if tunnel_on:
         typer.echo("  mailllama tunnel      # open the SSH tunnel on demand")
+
+
+def _apply_migrations(database_url: str) -> None:
+    """Run `alembic upgrade head`, reporting whether the DB already existed."""
+    typer.secho("\nDatabase", fg=typer.colors.BRIGHT_BLUE, bold=True)
+
+    if database_url.startswith("sqlite:///"):
+        # Resolve sqlite path ("sqlite:///./mailllama.db" → ./mailllama.db)
+        raw = database_url[len("sqlite:///") :]
+        db_path = Path(raw).expanduser().resolve()
+        if db_path.exists():
+            typer.echo(f"Found existing database at {db_path}.")
+            typer.echo("Applying any pending migrations...")
+        else:
+            typer.echo(f"Creating database at {db_path}...")
+    else:
+        typer.echo(f"Applying migrations against {database_url}...")
+
+    result = subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"])
+    if result.returncode != 0:
+        typer.secho(
+            "\nMigration failed. Fix the issue and re-run `mailllama init`.",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(result.returncode)
+    typer.secho("Database up to date.", fg=typer.colors.GREEN)
 
 
 def _env_bool(raw: str | None, *, default: bool) -> bool:

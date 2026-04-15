@@ -19,8 +19,8 @@ uv run pytest -q
 uv run pytest tests/test_classify.py::test_classify_senders_writes_labels  # single test
 
 # Run the app
-uv run mailllama setup        # interactive .env setup (also edits .gitignore)
-uv run mailllama init         # apply Alembic migrations
+uv run mailllama setup        # interactive .env + apply migrations + edit .gitignore (safe to re-run)
+uv run mailllama init         # migrations only — escape hatch; setup already does this
 uv run mailllama serve        # FastAPI on BIND_HOST:BIND_PORT
 uv run mailllama sync         # pull mail → DB (wraps in optional SSH tunnel)
 uv run mailllama classify     # LLM-classify senders (wraps in optional SSH tunnel)

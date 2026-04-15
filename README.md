@@ -25,18 +25,19 @@ With [uv](https://docs.astral.sh/uv/) (recommended):
 
 ```bash
 uv sync                     # install from uv.lock
-uv run mailllama setup      # interactive config → writes .env
-uv run mailllama init       # create the database
+uv run mailllama setup      # interactive config + creates the database
 uv run mailllama serve      # open http://127.0.0.1:8000
 ```
 
 Without uv:
 
 ```bash
-pip install -e . && mailllama setup && mailllama init && mailllama serve
+pip install -e . && mailllama setup && mailllama serve
 ```
 
 Then visit `/auth/gmail/start` in the browser to connect your mailbox.
+Re-running `mailllama setup` is safe — it loads your existing values as
+defaults, preserves your `SECRET_KEY`, and only applies pending migrations.
 `uv sync --extra dev` also installs the test suite (`uv run pytest`).
 
 ### Remote LLM over SSH
