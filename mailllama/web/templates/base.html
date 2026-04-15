@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}MailLlama{% endblock %}</title>
+  <script src="https://unpkg.com/htmx.org@2.0.3"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .label-spam { background: #fee2e2; color: #991b1b; }
+    .label-subscription { background: #dbeafe; color: #1e40af; }
+    .label-newsletter { background: #e0e7ff; color: #3730a3; }
+    .label-promo { background: #fef3c7; color: #92400e; }
+    .label-transactional { background: #dcfce7; color: #166534; }
+    .label-personal { background: #f3e8ff; color: #6b21a8; }
+    .label-unknown { background: #f3f4f6; color: #374151; }
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-900">
+  <nav class="bg-white border-b px-6 py-3 flex items-center gap-6 text-sm">
+    <a href="/" class="font-bold text-lg">🦙 MailLlama</a>
+    <a href="/senders/" class="hover:underline">Senders</a>
+    <a href="/subscriptions/" class="hover:underline">Subscriptions</a>
+    <a href="/sizes/" class="hover:underline">Sizes</a>
+    <a href="/rules/" class="hover:underline">Rules</a>
+    <a href="/tasks/" class="hover:underline">Tasks</a>
+    {% if account %}
+    <span class="ml-auto text-gray-500">{{ account.email }}</span>
+    {% endif %}
+  </nav>
+  <main class="p-6 max-w-6xl mx-auto">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

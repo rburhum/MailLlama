@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-4">Sizes</h1>
+<p class="text-sm text-gray-600 mb-4">Total inbox: <b>{{ total|bytes }}</b></p>
+
+<div class="grid md:grid-cols-2 gap-4">
+  <div>
+    <h2 class="font-semibold mb-2">Top senders</h2>
+    <table class="w-full bg-white border rounded text-sm">
+      <thead class="bg-gray-100"><tr class="text-left">
+        <th class="p-2">Sender</th><th class="p-2 text-right">Count</th><th class="p-2 text-right">Size</th>
+      </tr></thead>
+      <tbody>
+      {% for s in by_sender %}
+        <tr class="border-t">
+          <td class="p-2">{{ s.addr }}</td>
+          <td class="p-2 text-right">{{ s.message_count }}</td>
+          <td class="p-2 text-right">{{ s.total_size_bytes|bytes }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div>
+    <h2 class="font-semibold mb-2">Biggest messages</h2>
+    <table class="w-full bg-white border rounded text-sm">
+      <thead class="bg-gray-100"><tr class="text-left">
+        <th class="p-2">Subject</th><th class="p-2">From</th><th class="p-2 text-right">Size</th>
+      </tr></thead>
+      <tbody>
+      {% for m in big_messages %}
+        <tr class="border-t">
+          <td class="p-2">{{ m.subject or '(no subject)' }}</td>
+          <td class="p-2 text-xs text-gray-600">{{ m.from_addr }}</td>
+          <td class="p-2 text-right">{{ m.size_bytes|bytes }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

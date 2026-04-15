@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-4">Subscriptions</h1>
+
+<div class="mb-3 flex gap-2 text-sm">
+  <a class="px-2 py-1 rounded {% if tab == 'all' %}bg-gray-800 text-white{% else %}bg-white border{% endif %}" href="/subscriptions/?tab=all">All</a>
+  <a class="px-2 py-1 rounded {% if tab == 'untouched' %}bg-gray-800 text-white{% else %}bg-white border{% endif %}" href="/subscriptions/?tab=untouched">Untouched (never replied)</a>
+</div>
+
+<table class="w-full bg-white border rounded text-sm">
+  <thead class="bg-gray-100">
+    <tr class="text-left">
+      <th class="p-2">Sender</th>
+      <th class="p-2">Label</th>
+      <th class="p-2 text-right">Count</th>
+      <th class="p-2 text-right">Replies</th>
+      <th class="p-2 text-right">Size</th>
+      <th class="p-2"></th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for s in senders %}
+    <tr class="border-t">
+      <td class="p-2">
+        <a class="text-blue-700 hover:underline" href="/senders/{{ s.id }}">{{ s.normalized_addr }}</a>
+      </td>
+      <td class="p-2">
+        <span class="px-2 py-0.5 rounded text-xs label-{{ s.latest_label }}">{{ s.latest_label }}</span>
+      </td>
+      <td class="p-2 text-right">{{ s.message_count }}</td>
+      <td class="p-2 text-right">{{ s.reply_count }}</td>
+      <td class="p-2 text-right">{{ s.total_size_bytes|bytes }}</td>
+      <td class="p-2 space-x-2">
+        <button class="text-xs text-red-700 hover:underline"
+                hx-post="/actions/trash_by_sender"
+                hx-vals='{"addr": "{{ s.normalized_addr }}", "only_unreplied": "true"}'
+                hx-confirm="Trash unreplied mail from {{ s.normalized_addr }}?"
+                hx-swap="none">trash unreplied</button>
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="6" class="p-4 text-center text-gray-500">Nothing here yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

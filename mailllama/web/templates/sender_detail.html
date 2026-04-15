@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block content %}
+<a href="/senders/" class="text-sm text-blue-700 hover:underline">← back</a>
+<h1 class="text-2xl font-bold mb-2">{{ sender.normalized_addr }}</h1>
+<div class="text-sm text-gray-600 mb-4">
+  {{ sender.message_count }} messages · {{ sender.reply_count }} replies · {{ sender.total_size_bytes|bytes }}
+  {% if sender.latest_label %}
+    · <span class="px-2 py-0.5 rounded text-xs label-{{ sender.latest_label }}">{{ sender.latest_label }}</span>
+  {% endif %}
+</div>
+
+{% if sender.latest_reasoning %}
+  <div class="text-xs text-gray-500 italic mb-3">{{ sender.latest_reasoning }}</div>
+{% endif %}
+
+<form id="bulk" method="post" action="/actions/trash" hx-post="/actions/trash" hx-swap="none">
+  <div class="mb-2 flex gap-2">
+    <button type="submit" class="px-2 py-1 text-xs bg-red-600 text-white rounded">Trash selected</button>
+    <button formaction="/actions/archive" formmethod="post"
+            hx-post="/actions/archive" hx-include="#bulk" hx-swap="none"
+            class="px-2 py-1 text-xs bg-gray-600 text-white rounded">Archive selected</button>
+  </div>
+  <table class="w-full bg-white border rounded text-sm">
+    <thead class="bg-gray-100">
+      <tr class="text-left">
+        <th class="p-2"><input type="checkbox" onclick="for(const b of document.querySelectorAll('input[name=ids]')){b.checked=this.checked}"></th>
+        <th class="p-2">Date</th>
+        <th class="p-2">Subject</th>
+        <th class="p-2 text-right">Size</th>
+        <th class="p-2">Unsub</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for m in messages %}
+      <tr class="border-t">
+        <td class="p-2"><input type="checkbox" name="ids" value="{{ m.id }}"></td>
+        <td class="p-2 text-xs text-gray-600">{{ m.date.strftime('%Y-%m-%d') if m.date else '' }}</td>
+        <td class="p-2">{{ m.subject or '(no subject)' }}</td>
+        <td class="p-2 text-right">{{ m.size_bytes|bytes }}</td>
+        <td class="p-2">
+          {% if m.list_unsub_one_click or m.list_unsub_http or m.list_unsub_mailto %}
+            <button class="text-xs text-blue-700 hover:underline"
+                    hx-post="/actions/unsubscribe/{{ m.id }}" hx-swap="none">unsub</button>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</form>
+{% endblock %}
