@@ -1,16 +1,17 @@
 """Task runner: submits sync functions to a thread pool with DB-backed progress.
 
 Each task is a row in the ``task`` table. The web UI streams progress via SSE.
-Tasks run in threads (via ``asyncio.to_thread``) so they don't block the event
-loop — multiple tasks can execute concurrently.
+Tasks run in a module-level ThreadPoolExecutor so they don't block the caller
+regardless of whether it's an async route, a sync route (which FastAPI
+dispatches to a worker thread), or the CLI.
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import traceback
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Any
 
@@ -20,6 +21,11 @@ from ..db import SessionLocal, session_scope
 from ..models import TaskRecord
 
 log = logging.getLogger(__name__)
+
+# Module-level pool: independent of any asyncio loop, so submit() works from
+# both sync routes (FastAPI worker thread) and CLI calls. max_workers caps
+# the number of concurrent background tasks.
+_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="mailllama-task")
 
 # Sync callable: receives a TaskHandle, does work, returns anything.
 TaskFn = Callable[["TaskHandle"], Any]
@@ -129,17 +135,14 @@ def _run_sync(task_id: int, fn: TaskFn) -> None:
 
 
 def submit(kind: str, fn: TaskFn, *, total: int = 0) -> int:
-    """Submit a task for background execution. Returns task id."""
+    """Submit a task for background execution. Returns task id immediately.
+
+    Always uses the module-level ThreadPoolExecutor so this works from
+    any caller: async routes, sync routes (which FastAPI dispatches to a
+    worker thread with no event loop), and the CLI.
+    """
     task_id = create_task_record(kind, total=total)
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        # No running loop (e.g. called from CLI) — run synchronously.
-        _run_sync(task_id, fn)
-        return task_id
-    # Run in thread pool so we don't block the event loop — multiple
-    # tasks can execute concurrently and SSE streaming keeps working.
-    loop.run_in_executor(None, _run_sync, task_id, fn)
+    _executor.submit(_run_sync, task_id, fn)
     return task_id
 
 

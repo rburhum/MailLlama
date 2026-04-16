@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+
+log = logging.getLogger(__name__)
 
 from ..cache import get_cache
 from ..config import get_settings
@@ -127,9 +130,7 @@ def classify_senders(
             batch_samples = [samples[i] for i in todo_indices]
             prompt = build_sender_batch_prompt(batch_samples)
             response = llm.complete_json(SENDER_BATCH_SYSTEM, prompt, model=model)
-            classifications = response.get("classifications", [])
-            # Index response by sender_index.
-            by_idx = {c.get("sender_index"): c for c in classifications}
+            by_idx = _parse_classifications(response)
             for local_idx, global_i in enumerate(todo_indices):
                 c = by_idx.get(local_idx) or {
                     "label": "unknown",
@@ -138,7 +139,7 @@ def classify_senders(
                 }
                 payload = {
                     "label": c.get("label", "unknown"),
-                    "confidence": float(c.get("confidence", 0.0)),
+                    "confidence": float(c.get("confidence", 0.0) or 0.0),
                     "reasoning": c.get("reasoning", ""),
                 }
                 _apply_classification(chunk[global_i], payload, model)
@@ -152,6 +153,50 @@ def classify_senders(
                     handle.update(session=session, progress=done, message=f"Classified {done}")
         session.commit()  # release write lock between batches
     return done
+
+
+def _parse_classifications(response: dict) -> dict[int, dict]:
+    """Tolerantly extract a sender_index → classification map from the LLM.
+
+    The prompt asks for::
+
+        {"classifications": [{"sender_index": 0, "label": ..., ...}, ...]}
+
+    but different models sometimes return variations like:
+      - a bare list at the top level: ``[{...}, {...}]``
+      - a dict keyed by index: ``{"0": {...}, "1": {...}}``
+      - items that are lists/tuples instead of dicts
+      - items missing ``sender_index`` (assume positional)
+
+    Anything we can't interpret is logged and skipped; the caller treats
+    missing indices as "unknown" so a malformed batch doesn't kill the
+    whole run.
+    """
+    if isinstance(response, list):
+        items = response
+    elif isinstance(response, dict):
+        items = response.get("classifications") or response.get("results") or []
+        if isinstance(items, dict):
+            # Convert dict-keyed-by-index to a list of items.
+            items = [{**v, "sender_index": int(k)} for k, v in items.items() if isinstance(v, dict)]
+    else:
+        items = []
+
+    by_idx: dict[int, dict] = {}
+    for position, item in enumerate(items):
+        if not isinstance(item, dict):
+            log.warning("classify: skipping non-dict classification item: %r", item)
+            continue
+        idx = item.get("sender_index", position)
+        try:
+            idx_int = int(idx)
+        except (TypeError, ValueError):
+            log.warning("classify: bad sender_index %r, using position %d", idx, position)
+            idx_int = position
+        by_idx[idx_int] = item
+    if not by_idx and items:
+        log.warning("classify: could not parse LLM response; raw=%r", response)
+    return by_idx
 
 
 def _apply_classification(sender: Sender, payload: dict, model: str) -> None:
