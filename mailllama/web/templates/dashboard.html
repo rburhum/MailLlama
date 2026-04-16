@@ -29,8 +29,15 @@
 
   <div class="bg-white border rounded p-4 space-y-3">
     <h2 class="font-semibold">Actions</h2>
-    <div class="flex flex-wrap gap-2">
+    <div class="flex flex-wrap items-end gap-2">
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Max messages</label>
+        <input id="sync-limit" name="max_messages" type="number" value="500"
+               min="1" max="50000" step="100"
+               class="w-28 border rounded px-2 py-1.5 text-sm" />
+      </div>
       <button hx-post="/actions/sync" hx-swap="none"
+              hx-include="#sync-limit"
               class="px-3 py-2 bg-blue-600 text-white rounded">Sync inbox</button>
       <button hx-post="/actions/classify" hx-swap="none"
               class="px-3 py-2 bg-indigo-600 text-white rounded">Classify senders</button>

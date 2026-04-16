@@ -21,14 +21,18 @@ router = APIRouter()
 
 
 @router.post("/sync")
-def start_sync(account: Account = Depends(get_account)) -> JSONResponse:
+def start_sync(
+    max_messages: int = Form(500),
+    account: Account = Depends(get_account),
+) -> JSONResponse:
     acct_id = account.id
+    limit = max(1, min(max_messages, 50000))
 
     async def run(handle):
         with session_scope() as s:
             a = s.get(Account, acct_id)
             p = provider_for(a)
-            sync_account(s, a, p, handle=handle)
+            sync_account(s, a, p, handle=handle, max_results=limit)
 
     task_id = submit("sync", run)
     return JSONResponse({"task_id": task_id})
