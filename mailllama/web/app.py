@@ -13,7 +13,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from ..config import get_settings
 from ..ssh_tunnel import maybe_ssh_tunnel
-from .routes import actions, auth, dashboard, rules, senders, sizes, subscriptions, tasks
+from .routes import actions, auth, chat, dashboard, rules, senders, sizes, subscriptions, tasks
 
 log = logging.getLogger(__name__)
 
@@ -85,6 +85,7 @@ def create_app() -> FastAPI:
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
     app.include_router(dashboard.router)
+    app.include_router(chat.router, prefix="/chat")
     app.include_router(auth.router, prefix="/auth")
     app.include_router(senders.router, prefix="/senders")
     app.include_router(subscriptions.router, prefix="/subscriptions")

@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}Chat - MailLlama{% endblock %}
+{% block content %}
+<div class="flex flex-col" style="height: calc(100vh - 120px);">
+  <div class="flex items-center justify-between mb-3">
+    <h1 class="text-2xl font-bold">Chat with your inbox</h1>
+    <button onclick="clearChat()" class="text-xs text-gray-500 hover:text-gray-800">Clear history</button>
+  </div>
+
+  <div id="messages" class="flex-1 overflow-y-auto space-y-3 mb-3 pr-2">
+    <div class="text-sm text-gray-400 italic">
+      Ask me anything about your inbox. I can search messages, list senders,
+      trash or archive mail, unsubscribe from lists, manage rules, and more.
+    </div>
+  </div>
+
+  <form id="chat-form" onsubmit="sendMessage(event)" class="flex gap-2">
+    <input id="chat-input" type="text" autocomplete="off" placeholder="e.g. Show me all newsletters I never replied to"
+           class="flex-1 border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+    <button id="chat-send" type="submit"
+            class="px-4 py-2 bg-blue-600 text-white rounded text-sm transition-all disabled:opacity-50">
+      Send
+    </button>
+  </form>
+</div>
+
+<style>
+  .msg-user { background: #eff6ff; border-radius: 12px 12px 2px 12px; }
+  .msg-assistant { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 12px 12px 12px 2px; }
+  .msg-assistant pre { background: #f3f4f6; padding: 8px; border-radius: 6px; overflow-x: auto; font-size: 12px; }
+  @keyframes fade-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  .msg-bubble { animation: fade-in 0.2s ease-out; }
+  @keyframes dot-pulse { 0%,80%,100% { opacity: 0.3; } 40% { opacity: 1; } }
+  .thinking-dot { animation: dot-pulse 1.4s ease-in-out infinite; }
+  .thinking-dot:nth-child(2) { animation-delay: 0.2s; }
+  .thinking-dot:nth-child(3) { animation-delay: 0.4s; }
+</style>
+
+<script>
+/*
+ * Security note: renderMarkdown() HTML-escapes ALL content from the LLM
+ * BEFORE applying markdown transforms. The only innerHTML written is our
+ * own safe elements (<pre>, <code>, <strong>, <br>) applied to pre-escaped
+ * text. User messages use textContent (no HTML rendering).
+ */
+var chatHistory = [];
+var messagesEl = document.getElementById('messages');
+var inputEl = document.getElementById('chat-input');
+var sendBtn = document.getElementById('chat-send');
+
+function addBubble(role, text) {
+  var div = document.createElement('div');
+  div.className = 'msg-bubble max-w-2xl p-3 text-sm ' +
+    (role === 'user' ? 'msg-user ml-auto' : 'msg-assistant');
+
+  if (role === 'assistant') {
+    // Content is HTML-escaped first, then safe markdown transforms applied.
+    div.innerHTML = renderMarkdown(text);
+  } else {
+    div.textContent = text;
+  }
+  messagesEl.appendChild(div);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  return div;
+}
+
+function addThinking() {
+  var div = document.createElement('div');
+  div.id = 'thinking';
+  div.className = 'msg-bubble msg-assistant max-w-2xl p-3 text-sm flex gap-1';
+  for (var i = 0; i < 3; i++) {
+    var dot = document.createElement('span');
+    dot.className = 'thinking-dot inline-block w-2 h-2 bg-gray-400 rounded-full';
+    div.appendChild(dot);
+  }
+  messagesEl.appendChild(div);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function removeThinking() {
+  var el = document.getElementById('thinking');
+  if (el) el.remove();
+}
+
+function renderMarkdown(text) {
+  // Step 1: HTML-escape everything so LLM output can't inject HTML.
+  var s = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  // Step 2: apply safe markdown transforms on the escaped text.
+  s = s.replace(/```(\w*)\n([\s\S]*?)```/g, function(_, lang, code) {
+    return '<pre><code>' + code.trim() + '</code></pre>';
+  });
+  s = s.replace(/`([^`]+)`/g, '<code class="bg-gray-200 px-1 rounded text-xs">$1</code>');
+  s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/\n/g, '<br>');
+  return s;
+}
+
+function sendMessage(e) {
+  e.preventDefault();
+  var text = inputEl.value.trim();
+  if (!text) return;
+
+  inputEl.value = '';
+  sendBtn.disabled = true;
+  addBubble('user', text);
+  addThinking();
+
+  fetch('/chat/message', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: text, history: chatHistory })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    removeThinking();
+    addBubble('assistant', data.reply);
+    chatHistory = data.history || [];
+    sendBtn.disabled = false;
+    inputEl.focus();
+  })
+  .catch(function(err) {
+    removeThinking();
+    addBubble('assistant', 'Error: ' + err);
+    sendBtn.disabled = false;
+    inputEl.focus();
+  });
+}
+
+function clearChat() {
+  chatHistory = [];
+  messagesEl.textContent = '';
+  var hint = document.createElement('div');
+  hint.className = 'text-sm text-gray-400 italic';
+  hint.textContent = 'Ask me anything about your inbox.';
+  messagesEl.appendChild(hint);
+}
+
+inputEl.focus();
+</script>
+{% endblock %}

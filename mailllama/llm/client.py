@@ -82,6 +82,31 @@ class LLMClient:
         text = (resp.choices[0].message.content or "").strip()
         return _parse_json_loose(text)
 
+    def chat(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        tools: list[dict[str, Any]] | None = None,
+        model: str | None = None,
+        temperature: float = 0.3,
+        max_tokens: int = 4096,
+    ) -> Any:
+        """Multi-turn chat, optionally with tool/function calling.
+
+        Returns the raw ``ChatCompletion`` response object so the caller
+        can inspect ``choices[0].message.tool_calls`` etc.
+        """
+        model = model or self.model
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        if tools:
+            kwargs["tools"] = tools
+        return self._client.chat.completions.create(**kwargs)
+
 
 def _parse_json_loose(text: str) -> dict[str, Any]:
     """Parse JSON tolerantly: strip markdown fences, find the first object."""
