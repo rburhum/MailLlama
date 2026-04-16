@@ -36,15 +36,169 @@
                min="1" max="50000" step="100"
                class="w-28 border rounded px-2 py-1.5 text-sm" />
       </div>
-      <button hx-post="/actions/sync" hx-swap="none"
-              hx-include="#sync-limit"
-              class="px-3 py-2 bg-blue-600 text-white rounded">Sync inbox</button>
-      <button hx-post="/actions/classify" hx-swap="none"
-              class="px-3 py-2 bg-indigo-600 text-white rounded">Classify senders</button>
-      <button hx-post="/actions/interactions" hx-swap="none"
-              class="px-3 py-2 bg-purple-600 text-white rounded">Detect replies</button>
+      <button id="btn-sync" onclick="launchTask('sync', '/actions/sync', this, '#sync-limit')"
+              class="action-btn px-3 py-2 bg-blue-600 text-white rounded transition-all">
+        Sync inbox
+      </button>
+      <button id="btn-classify" onclick="launchTask('classify', '/actions/classify', this)"
+              class="action-btn px-3 py-2 bg-indigo-600 text-white rounded transition-all">
+        Classify senders
+      </button>
+      <button id="btn-interactions" onclick="launchTask('interactions', '/actions/interactions', this)"
+              class="action-btn px-3 py-2 bg-purple-600 text-white rounded transition-all">
+        Detect replies
+      </button>
     </div>
-    <p class="text-xs text-gray-500">Progress is visible on the <a class="underline" href="/tasks/">Tasks</a> page.</p>
+    <div id="task-status" class="space-y-2"></div>
   </div>
 {% endif %}
+
+<style>
+  .action-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner {
+    display: inline-block; width: 14px; height: 14px;
+    border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff;
+    border-radius: 50%; animation: spin 0.6s linear infinite;
+    vertical-align: middle; margin-right: 4px;
+  }
+  .spinner-dark { border-color: rgba(59,130,246,0.3); border-top-color: #3b82f6; width: 12px; height: 12px; }
+  @keyframes pulse-bg { 0%,100% { opacity: 1; } 50% { opacity: 0.7; } }
+  .task-bar { animation: pulse-bg 2s ease-in-out infinite; }
+  .task-bar.done { animation: none; }
+</style>
+
+<script>
+/* All interpolated values come from our own template literals or
+   server-returned integer task IDs — no user-controlled strings. */
+
+function launchTask(kind, url, btn, includeSelector) {
+  var originalText = btn.textContent;
+  btn.disabled = true;
+
+  var sp = document.createElement('span');
+  sp.className = 'spinner';
+  btn.textContent = '';
+  btn.appendChild(sp);
+  btn.appendChild(document.createTextNode(' ' + originalText + '...'));
+
+  var fd = new FormData();
+  if (includeSelector) {
+    var el = document.querySelector(includeSelector);
+    if (el) fd.append(el.name, el.value);
+  }
+
+  fetch(url, { method: 'POST', body: fd })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var taskId = data.task_id;
+      var bar = createProgressBar(kind, taskId);
+      document.getElementById('task-status').appendChild(bar);
+      streamTask(taskId, bar, btn, originalText);
+    })
+    .catch(function(err) {
+      btn.disabled = false;
+      btn.textContent = originalText;
+      alert('Failed to start task: ' + err);
+    });
+}
+
+function createProgressBar(kind, taskId) {
+  var bar = document.createElement('div');
+  bar.id = 'task-bar-' + taskId;
+  bar.className = 'task-bar bg-gray-100 rounded p-3 text-sm';
+
+  var row = document.createElement('div');
+  row.className = 'flex items-center gap-2';
+
+  var barSpinner = document.createElement('span');
+  barSpinner.className = 'spinner spinner-dark';
+  row.appendChild(barSpinner);
+
+  var label = document.createElement('span');
+  label.className = 'font-medium capitalize';
+  label.textContent = kind;
+  row.appendChild(label);
+
+  var msg = document.createElement('span');
+  msg.className = 'text-gray-500 task-msg';
+  msg.textContent = 'Starting...';
+  row.appendChild(msg);
+
+  var prog = document.createElement('span');
+  prog.className = 'ml-auto text-xs text-gray-400 task-progress';
+  row.appendChild(prog);
+
+  bar.appendChild(row);
+
+  var track = document.createElement('div');
+  track.className = 'mt-2 bg-gray-200 rounded-full h-1.5 overflow-hidden';
+  var fill = document.createElement('div');
+  fill.className = 'bg-blue-600 h-1.5 rounded-full transition-all duration-500';
+  fill.style.width = '0%';
+  fill.id = 'task-bar-' + taskId + '-fill';
+  track.appendChild(fill);
+  bar.appendChild(track);
+
+  return bar;
+}
+
+function streamTask(taskId, bar, btn, originalText) {
+  var source = new EventSource('/tasks/stream/' + taskId);
+
+  source.onmessage = function(event) {
+    var data = JSON.parse(event.data);
+    var msgEl = bar.querySelector('.task-msg');
+    var progEl = bar.querySelector('.task-progress');
+    var fillEl = document.getElementById('task-bar-' + taskId + '-fill');
+
+    if (data.message && msgEl) msgEl.textContent = data.message;
+
+    // Update progress text and fill bar.
+    if (data.progress != null && data.total != null && data.total > 0) {
+      if (progEl) progEl.textContent = data.progress + '/' + data.total;
+      var pct = Math.min(100, Math.round((data.progress / data.total) * 100));
+      if (fillEl) fillEl.style.width = pct + '%';
+    } else if (data.progress != null && data.progress > 0) {
+      if (progEl) progEl.textContent = String(data.progress);
+      if (fillEl) { fillEl.style.width = '100%'; fillEl.style.opacity = '0.3'; }
+    }
+
+    if (data.status === 'completed' || data.status === 'failed') {
+      source.close();
+      finishBar(bar, taskId, btn, originalText, data.status, data.message);
+    }
+  };
+
+  source.onerror = function() {
+    source.close();
+    finishBar(bar, taskId, btn, originalText, 'completed', null);
+  };
+}
+
+function finishBar(bar, taskId, btn, originalText, status, message) {
+  btn.disabled = false;
+  btn.textContent = originalText;
+  bar.classList.add('done');
+
+  var sp = bar.querySelector('.spinner');
+  if (sp) sp.remove();
+
+  var fillEl = document.getElementById('task-bar-' + taskId + '-fill');
+  var msgEl = bar.querySelector('.task-msg');
+  if (fillEl) fillEl.style.opacity = '1';
+
+  if (status === 'completed') {
+    if (fillEl) { fillEl.style.width = '100%'; fillEl.classList.remove('bg-blue-600'); fillEl.classList.add('bg-green-500'); }
+    if (msgEl) msgEl.classList.add('text-green-700');
+  } else {
+    if (fillEl) { fillEl.classList.remove('bg-blue-600'); fillEl.classList.add('bg-red-500'); }
+    if (msgEl) { msgEl.textContent = message || 'Failed \u2014 check Tasks page'; msgEl.classList.add('text-red-700'); }
+  }
+
+  setTimeout(function() {
+    if (bar) { bar.style.transition = 'opacity 1s'; bar.style.opacity = '0'; setTimeout(function() { bar.remove(); }, 1000); }
+  }, 5000);
+}
+</script>
 {% endblock %}

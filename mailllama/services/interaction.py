@@ -24,7 +24,7 @@ def compute_interactions(
     threads = list(session.scalars(q).all())
 
     if handle:
-        handle.update(total=len(threads), message=f"Checking {len(threads)} threads")
+        handle.update(session=session, total=len(threads), message=f"Checking {len(threads)} threads")
 
     for i, t in enumerate(threads, 1):
         try:
@@ -32,11 +32,12 @@ def compute_interactions(
             t.user_has_replied = bool(sent_ids)
         except Exception:  # noqa: BLE001
             t.user_has_replied = None
-        if handle and i % 25 == 0:
-            handle.update(progress=i)
-            session.flush()
+        if i % 25 == 0:
+            session.commit()
+            if handle:
+                handle.update(session=session, progress=i)
 
-    session.flush()
+    session.commit()
 
     # Roll up reply counts per sender.
     replied = (

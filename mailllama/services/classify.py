@@ -67,7 +67,7 @@ def classify_senders(
     senders: list[Sender] = list(session.scalars(q).all())
 
     if handle:
-        handle.update(total=len(senders), message=f"Classifying {len(senders)} senders")
+        handle.update(session=session, total=len(senders), message=f"Classifying {len(senders)} senders")
     if not senders:
         return 0
 
@@ -119,7 +119,7 @@ def classify_senders(
                 _apply_classification(chunk[i], payload, model)
                 done += 1
                 if handle:
-                    handle.update(progress=done, message=f"Classified {done}")
+                    handle.update(session=session, progress=done, message=f"Classified {done}")
             else:
                 todo_indices.append(i)
 
@@ -149,8 +149,8 @@ def classify_senders(
                 )
                 done += 1
                 if handle:
-                    handle.update(progress=done, message=f"Classified {done}")
-        session.flush()
+                    handle.update(session=session, progress=done, message=f"Classified {done}")
+        session.commit()  # release write lock between batches
     return done
 
 

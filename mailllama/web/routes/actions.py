@@ -28,7 +28,7 @@ def start_sync(
     acct_id = account.id
     limit = max(1, min(max_messages, 50000))
 
-    async def run(handle):
+    def run(handle):
         with session_scope() as s:
             a = s.get(Account, acct_id)
             p = provider_for(a)
@@ -42,7 +42,7 @@ def start_sync(
 def start_classify(account: Account = Depends(get_account)) -> JSONResponse:
     acct_id = account.id
 
-    async def run(handle):
+    def run(handle):
         with session_scope() as s:
             a = s.get(Account, acct_id)
             classify_senders(s, a, handle=handle)
@@ -55,7 +55,7 @@ def start_classify(account: Account = Depends(get_account)) -> JSONResponse:
 def start_interactions(account: Account = Depends(get_account)) -> JSONResponse:
     acct_id = account.id
 
-    async def run(handle):
+    def run(handle):
         with session_scope() as s:
             a = s.get(Account, acct_id)
             p = provider_for(a)

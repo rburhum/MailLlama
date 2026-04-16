@@ -1,11 +1,8 @@
-"""In-process asyncio task runner with DB-backed progress.
+"""Task runner: submits sync functions to a thread pool with DB-backed progress.
 
-A task is represented by a row in the ``task`` table. The web UI polls that
-row via ``/tasks/{id}`` to show progress.
-
-Redis/Huey is deliberately NOT required. If ``REDIS_URL`` is set, you can
-still use this runner — tasks just aren't durable across restarts.
-Proper Huey integration is left for a follow-up (see ``plan`` notes).
+Each task is a row in the ``task`` table. The web UI streams progress via SSE.
+Tasks run in threads (via ``asyncio.to_thread``) so they don't block the event
+loop — multiple tasks can execute concurrently.
 """
 
 from __future__ import annotations
@@ -13,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import traceback
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
@@ -24,11 +21,18 @@ from ..models import TaskRecord
 
 log = logging.getLogger(__name__)
 
-TaskFn = Callable[["TaskHandle"], Awaitable[Any]]
+# Sync callable: receives a TaskHandle, does work, returns anything.
+TaskFn = Callable[["TaskHandle"], Any]
 
 
 class TaskHandle:
-    """Handle given to a task function so it can report progress."""
+    """Handle given to a task function so it can report progress.
+
+    When the caller already has an open SQLAlchemy session (which is the
+    normal case inside ``sync_account`` / ``classify_senders`` / etc.),
+    it should pass ``session=`` so the progress update happens on the
+    *same* connection — avoids SQLite "database is locked" errors.
+    """
 
     def __init__(self, task_id: int) -> None:
         self.task_id = task_id
@@ -39,17 +43,45 @@ class TaskHandle:
         progress: int | None = None,
         total: int | None = None,
         message: str | None = None,
+        session: Session | None = None,
     ) -> None:
-        with session_scope() as session:
-            rec = session.get(TaskRecord, self.task_id)
-            if rec is None:
-                return
-            if progress is not None:
-                rec.progress = progress
-            if total is not None:
-                rec.total = total
-            if message is not None:
-                rec.message = message
+        if session is not None:
+            self._apply(session, progress=progress, total=total, message=message)
+        else:
+            with session_scope() as s:
+                self._apply(s, progress=progress, total=total, message=message)
+
+        # Notify SSE subscribers (import here to avoid circular deps).
+        from .events import notify
+
+        notify(
+            self.task_id,
+            {
+                "task_id": self.task_id,
+                "progress": progress,
+                "total": total,
+                "message": message,
+                "status": "running",
+            },
+        )
+
+    def _apply(
+        self,
+        session: Session,
+        *,
+        progress: int | None,
+        total: int | None,
+        message: str | None,
+    ) -> None:
+        rec = session.get(TaskRecord, self.task_id)
+        if rec is None:
+            return
+        if progress is not None:
+            rec.progress = progress
+        if total is not None:
+            rec.total = total
+        if message is not None:
+            rec.message = message
 
 
 def create_task_record(kind: str, total: int = 0) -> int:
@@ -68,12 +100,13 @@ def _mark(session: Session, task_id: int, **fields: Any) -> None:
         setattr(rec, k, v)
 
 
-async def _run(task_id: int, fn: TaskFn) -> None:
+def _run_sync(task_id: int, fn: TaskFn) -> None:
+    """Run the task function synchronously (called in a thread)."""
     handle = TaskHandle(task_id)
     with session_scope() as session:
         _mark(session, task_id, status="running", started_at=datetime.utcnow())
     try:
-        await fn(handle)
+        fn(handle)
     except Exception as exc:  # noqa: BLE001
         log.exception("Task %s failed", task_id)
         with session_scope() as session:
@@ -84,9 +117,15 @@ async def _run(task_id: int, fn: TaskFn) -> None:
                 error=f"{exc}\n{traceback.format_exc()}",
                 finished_at=datetime.utcnow(),
             )
+        from .events import notify
+
+        notify(task_id, {"task_id": task_id, "status": "failed", "message": str(exc)})
         return
     with session_scope() as session:
         _mark(session, task_id, status="completed", finished_at=datetime.utcnow())
+    from .events import notify
+
+    notify(task_id, {"task_id": task_id, "status": "completed"})
 
 
 def submit(kind: str, fn: TaskFn, *, total: int = 0) -> int:
@@ -96,9 +135,11 @@ def submit(kind: str, fn: TaskFn, *, total: int = 0) -> int:
         loop = asyncio.get_running_loop()
     except RuntimeError:
         # No running loop (e.g. called from CLI) — run synchronously.
-        asyncio.run(_run(task_id, fn))
+        _run_sync(task_id, fn)
         return task_id
-    loop.create_task(_run(task_id, fn))
+    # Run in thread pool so we don't block the event loop — multiple
+    # tasks can execute concurrently and SSE streaming keeps working.
+    loop.run_in_executor(None, _run_sync, task_id, fn)
     return task_id
 
 

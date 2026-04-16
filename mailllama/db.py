@@ -23,7 +23,22 @@ def _make_engine() -> Engine:
         # whole app sees the same data (important for tests).
         if ":memory:" in url or url.endswith(":memory:"):
             kwargs["poolclass"] = StaticPool
-    return create_engine(url, connect_args=connect_args, **kwargs)
+    eng = create_engine(url, connect_args=connect_args, **kwargs)
+
+    # Enable WAL journal mode for SQLite. WAL allows concurrent readers
+    # alongside a writer, which prevents "database is locked" when the web
+    # app polls task progress while a sync/classify task is writing.
+    if url.startswith("sqlite") and ":memory:" not in url:
+        from sqlalchemy import event
+
+        @event.listens_for(eng, "connect")
+        def _set_sqlite_wal(dbapi_conn, connection_record):
+            cursor = dbapi_conn.cursor()
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA busy_timeout=5000")
+            cursor.close()
+
+    return eng
 
 
 engine: Engine = _make_engine()

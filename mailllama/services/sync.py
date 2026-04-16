@@ -113,11 +113,12 @@ def sync_account(
         _upsert_thread(session, account.id, m.thread_id, m.date)
         _upsert_sender(session, account.id, m)
         count += 1
-        if handle and count % 50 == 0:
-            handle.update(progress=count, message=f"Synced {count} messages")
-            session.flush()
+        if count % 50 == 0:
+            session.commit()  # release write lock so other tasks can proceed
+            if handle:
+                handle.update(session=session, progress=count, message=f"Synced {count} messages")
     account.cursor = new_cursor
-    session.flush()
+    session.commit()
     if handle:
-        handle.update(progress=count, total=count, message=f"Synced {count} messages")
+        handle.update(session=session, progress=count, total=count, message=f"Synced {count} messages")
     return count
