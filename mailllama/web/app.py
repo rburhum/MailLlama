@@ -73,6 +73,13 @@ def create_app() -> FastAPI:
 
     app.add_middleware(BearerAuthMiddleware)
 
+    # Session cookie for OAuth PKCE state (code_verifier). Signed with SECRET_KEY.
+    from starlette.middleware.sessions import SessionMiddleware
+
+    settings = get_settings()
+    session_secret = settings.secret_key or "mailllama-dev-fallback"
+    app.add_middleware(SessionMiddleware, secret_key=session_secret)
+
     static_dir = BASE_DIR / "static"
     static_dir.mkdir(exist_ok=True)
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")

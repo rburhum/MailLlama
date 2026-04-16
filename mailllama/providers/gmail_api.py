@@ -207,7 +207,17 @@ def _extract_body(payload: dict[str, Any]) -> str:
 
 
 def build_oauth_flow(client_id: str, client_secret: str, redirect_uri: str) -> Any:
+    import os
+
     from google_auth_oauthlib.flow import Flow  # lazy
+
+    # Google grants scopes beyond what we request (e.g. adds "email" when we
+    # ask for "openid"). oauthlib would otherwise fail on "Scope has changed".
+    os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
+    # oauthlib refuses http redirect URIs by default. For local dev with
+    # http://127.0.0.1:<port>/..., we opt in.
+    if redirect_uri.startswith("http://"):
+        os.environ.setdefault("OAUTHLIB_INSECURE_TRANSPORT", "1")
 
     client_config = {
         "web": {
