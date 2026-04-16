@@ -228,6 +228,18 @@ def setup(
         show_default=False,
     )
 
+    # ----- Web (collected before Gmail so we can compose the redirect URI) -----
+    typer.secho("\nWeb server", fg=typer.colors.BRIGHT_BLUE, bold=True)
+    answers["BIND_HOST"] = typer.prompt(
+        "Bind host", default=existing.get("BIND_HOST", "127.0.0.1")
+    )
+    answers["BIND_PORT"] = typer.prompt(
+        "Bind port", default=existing.get("BIND_PORT", "8000")
+    )
+    default_redirect_uri = (
+        f"http://{answers['BIND_HOST']}:{answers['BIND_PORT']}/auth/gmail/callback"
+    )
+
     # ----- Mail provider -----
     typer.secho("\nMail provider", fg=typer.colors.BRIGHT_BLUE, bold=True)
     provider = typer.prompt(
@@ -241,7 +253,9 @@ def setup(
     if provider == "gmail_api":
         typer.echo(
             "\nCreate an OAuth client at https://console.cloud.google.com/apis/credentials\n"
-            "(type: Web application; redirect URI: http://127.0.0.1:8000/auth/gmail/callback)."
+            "(type: Web application). Add this exact URL under\n"
+            "'Authorized redirect URIs':\n"
+            f"    {default_redirect_uri}"
         )
         answers["GMAIL_CLIENT_ID"] = typer.prompt(
             "GMAIL_CLIENT_ID",
@@ -252,11 +266,21 @@ def setup(
             default=existing.get("GMAIL_CLIENT_SECRET", ""),
             hide_input=True,
         )
+        # Default to the URI composed from BIND_HOST:BIND_PORT so it can't
+        # silently drift out of sync when the user changes the bind port.
+        existing_redirect = existing.get("GMAIL_REDIRECT_URI", "").strip()
+        redirect_default = existing_redirect or default_redirect_uri
+        if existing_redirect and existing_redirect != default_redirect_uri:
+            typer.secho(
+                "\nNote: your existing GMAIL_REDIRECT_URI "
+                f"({existing_redirect}) does not match your bind port "
+                f"({answers['BIND_PORT']}).\n"
+                f"Expected: {default_redirect_uri}",
+                fg=typer.colors.YELLOW,
+            )
         answers["GMAIL_REDIRECT_URI"] = typer.prompt(
             "GMAIL_REDIRECT_URI",
-            default=existing.get(
-                "GMAIL_REDIRECT_URI", "http://127.0.0.1:8000/auth/gmail/callback"
-            ),
+            default=redirect_default,
         )
         # Preserve any existing IMAP values without prompting.
         for k in ("IMAP_HOST", "IMAP_PORT", "IMAP_USER", "IMAP_PASSWORD"):
@@ -295,12 +319,6 @@ def setup(
         show_default=False,
         hide_input=True,
     )
-
-    # ----- Web -----
-    answers["BIND_HOST"] = typer.prompt(
-        "\nBind host", default=existing.get("BIND_HOST", "127.0.0.1")
-    )
-    answers["BIND_PORT"] = typer.prompt("Bind port", default=existing.get("BIND_PORT", "8000"))
 
     # ----- Behavior -----
     dry = typer.confirm(
