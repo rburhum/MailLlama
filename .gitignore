@@ -8,6 +8,8 @@ venv/
 .env.local
 *.db
 *.db-journal
+*.db-shm
+*.db-wal
 *.sqlite
 *.sqlite3
 
