@@ -5,7 +5,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     )
 
     # Database
-    database_url: str = "sqlite:///./mailllama.db"
+    database_url: str = "sqlite:///mailllama.db"
 
     # Cache / queue
     redis_url: str | None = None
@@ -62,6 +62,26 @@ class Settings(BaseSettings):
 
     # Behavior
     dry_run: bool = False
+
+    @field_validator(
+        "imap_port",
+        "bind_port",
+        "ssh_tunnel_local_port",
+        "ssh_tunnel_remote_port",
+        mode="before",
+    )
+    @classmethod
+    def _empty_str_is_default(cls, v: object, info: ValidationInfo) -> object:
+        """Treat empty env values as 'unset' so the field default applies.
+
+        Without this, a stale .env with a line like ``IMAP_PORT=`` (for
+        example written by an older setup flow, or hand-edited to blank)
+        would make pydantic fail with ``Input should be a valid integer,
+        unable to parse string as an integer``.
+        """
+        if isinstance(v, str) and v.strip() == "":
+            return cls.model_fields[info.field_name].default
+        return v
 
     @property
     def classify_model(self) -> str:

@@ -152,7 +152,7 @@ def setup(
     typer.secho("Database", fg=typer.colors.BRIGHT_BLUE, bold=True)
     answers["DATABASE_URL"] = typer.prompt(
         "Database URL",
-        default=existing.get("DATABASE_URL", "sqlite:///./mailllama.db"),
+        default=existing.get("DATABASE_URL", "sqlite:///mailllama.db"),
     )
 
     # ----- Redis -----
@@ -337,14 +337,20 @@ def _apply_migrations(database_url: str) -> None:
     typer.secho("\nDatabase", fg=typer.colors.BRIGHT_BLUE, bold=True)
 
     if database_url.startswith("sqlite:///"):
-        # Resolve sqlite path ("sqlite:///./mailllama.db" → ./mailllama.db)
+        # SQLAlchemy SQLite URL forms:
+        #   sqlite:///foo.db         → relative path 'foo.db'
+        #   sqlite:////abs/foo.db    → absolute path '/abs/foo.db'
+        #   sqlite:///:memory:       → in-memory DB (no file)
         raw = database_url[len("sqlite:///") :]
-        db_path = Path(raw).expanduser().resolve()
-        if db_path.exists():
-            typer.echo(f"Found existing database at {db_path}.")
-            typer.echo("Applying any pending migrations...")
+        if raw == ":memory:":
+            typer.echo("Using in-memory SQLite database.")
         else:
-            typer.echo(f"Creating database at {db_path}...")
+            db_path = Path(raw).expanduser().resolve()
+            if db_path.exists():
+                typer.echo(f"Found existing database at {db_path}.")
+                typer.echo("Applying any pending migrations...")
+            else:
+                typer.echo(f"Creating database at {db_path}...")
     else:
         typer.echo(f"Applying migrations against {database_url}...")
 
@@ -421,6 +427,13 @@ _ENV_ORDER: list[tuple[str, str]] = [
 
 
 def _write_env(path: Path, answers: dict[str, str]) -> None:
+    """Write answers to ``path`` in the order defined by ``_ENV_ORDER``.
+
+    Keys with empty-string values are omitted entirely: pydantic-settings then
+    falls back to the field default, which is what we want for things like
+    ``IMAP_PORT`` when the user picked Gmail API. Writing ``IMAP_PORT=`` with
+    no value would make pydantic try to parse ``""`` as an int and crash.
+    """
     lines: list[str] = []
     for key, _ in _ENV_ORDER:
         if key == "":
@@ -429,9 +442,17 @@ def _write_env(path: Path, answers: dict[str, str]) -> None:
             lines.append(key)
         else:
             value = answers.get(key, "")
+            if value == "":
+                continue  # skip empty values — let pydantic use the default
             lines.append(f"{key}={value}")
+    # Collapse runs of blank lines created by skipped section entries.
+    cleaned: list[str] = []
+    for ln in lines:
+        if ln == "" and cleaned and cleaned[-1] == "":
+            continue
+        cleaned.append(ln)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(lines) + "\n")
+    path.write_text("\n".join(cleaned).rstrip() + "\n")
     try:
         path.chmod(0o600)
     except OSError:
